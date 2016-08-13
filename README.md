@@ -1,2 +1,2 @@
 # OrleansElasticUtils
-Orleans Statistics Provider for Elastic Search
+Orleans Providers for Elastic Search
