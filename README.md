@@ -4,7 +4,7 @@ Orleans Providers for Elastic Search
 ## How to install
 To install OrleansElasticUtils via NuGet, run this command in NuGet package manager console:
 ```code
-Install-Package OrleansElasticUtils
+PM> Install-Package OrleansElasticUtils
 ```
 
 ## StatisticsProvider
