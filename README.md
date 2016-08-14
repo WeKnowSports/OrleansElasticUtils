@@ -25,8 +25,7 @@ PM> Install-Package OrleansElasticUtils
                 ElasticHostAddress="http://localhost:9200"
                 ElasticIndex="orleans_statistics"
                 ElasticMetricsType="silo_metrics"
-                ElasticStatsType="silo_stats"                
-                />
+                ElasticStatsType="silo_stats" />
     </StatisticsProviders>
   </Globals>
   <Defaults>
