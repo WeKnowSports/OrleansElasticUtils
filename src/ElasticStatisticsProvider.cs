@@ -91,7 +91,7 @@ namespace Orleans.Providers.Elastic
 
             try
             {
-                var esClient = GetElasticClient(_state.ElasticHostAddress);
+                var esClient = CreateElasticClient(_state.ElasticHostAddress);
 
                 var siloMetrics = PopulateSiloMetricsEntry(metricsData, _state);
 
@@ -120,7 +120,7 @@ namespace Orleans.Providers.Elastic
 
             try
             {
-                var esClient = GetElasticClient(_state.ElasticHostAddress);
+                var esClient = CreateElasticClient(_state.ElasticHostAddress);
 
                 var counterBatches = statsCounters.Where(cs => cs.Storage == CounterStorage.LogAndTable)
                                                   .OrderBy(cs => cs.Name)
@@ -152,7 +152,7 @@ namespace Orleans.Providers.Elastic
 
         public Task Init(bool isSilo, string storageConnectionString, string deploymentId, string address, string siloName, string hostName) => TaskDone.Done;
 
-        static ElasticClient GetElasticClient(string elasticHostAddress)
+        static ElasticClient CreateElasticClient(string elasticHostAddress)
         {            
             var node = new Uri(elasticHostAddress);
             return new ElasticClient(new ConnectionSettings(node));
