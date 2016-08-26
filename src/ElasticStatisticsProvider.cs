@@ -4,10 +4,12 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
+using Orleans;
 using Orleans.Runtime;
+using Orleans.Providers;
 using Nest;
 
-namespace Orleans.Providers.Elastic
+namespace SBTech.Orleans.Providers.Elastic
 {
     class State
     {
