@@ -20,7 +20,7 @@ PM> Install-Package SBTech.OrleansElasticUtils
 <OrleansConfiguration xmlns="urn:orleans">
   <Globals>
     <StatisticsProviders>
-      <Provider Type="Orleans.Providers.Elastic.ElasticStatisticsProvider"
+      <Provider Type="SBTech.Orleans.Providers.Elastic.ElasticStatisticsProvider"
                 Name="ElasticStatisticsProvider"
                 ElasticHostAddress="http://localhost:9200"
                 ElasticIndex="orleans_statistics"
