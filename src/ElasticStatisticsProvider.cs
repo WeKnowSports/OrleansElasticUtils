@@ -121,7 +121,7 @@ namespace SBTech.Orleans.Providers.Elastic
         public async Task ReportMetrics(ISiloPerformanceMetrics metricsData)
         {
             if (_logger != null && _logger.IsVerbose3)
-                _logger.Verbose3("ElasticStatisticsProvider.ReportMetrics called with metrics: {0}, name: {1}, id: {2}.", metricsData, _state.SiloName, _state.Id);
+                _logger.Verbose3($"{ nameof(ElasticStatisticsProvider)}.ReportMetrics called with metrics: {0}, name: {1}, id: {2}.", metricsData, _state.SiloName, _state.Id);
 
             try
             {
@@ -137,7 +137,7 @@ namespace SBTech.Orleans.Providers.Elastic
             catch (Exception ex)
             {
                 if (_logger != null && _logger.IsVerbose)
-                    _logger.Verbose("ElasticStatisticsProvider.ReportMetrics failed: {0}", ex);
+                    _logger.Verbose($"{ nameof(ElasticStatisticsProvider)}.ReportMetrics failed: {0}", ex);
 
                 throw;
             }
@@ -149,7 +149,7 @@ namespace SBTech.Orleans.Providers.Elastic
         public async Task ReportStats(List<ICounter> statsCounters)
         {
             if (_logger != null && _logger.IsVerbose3)
-                _logger.Verbose3("ElasticStatisticsProvider.ReportStats called with {0} counters, name: {1}, id: {2}", statsCounters.Count, _state.SiloName, _state.Id);
+                _logger.Verbose3($"{ nameof(ElasticStatisticsProvider)}.ReportStats called with {0} counters, name: {1}, id: {2}", statsCounters.Count, _state.SiloName, _state.Id);
 
             try
             {
@@ -174,7 +174,7 @@ namespace SBTech.Orleans.Providers.Elastic
             catch (Exception ex)
             {
                 if (_logger != null && _logger.IsVerbose)
-                    _logger.Verbose("ElasticStatisticsProvider.ReportStats failed: {0}", ex);
+                    _logger.Verbose($"{ nameof(ElasticStatisticsProvider)}.ReportStats failed: {0}", ex);
 
                 throw;
             }
@@ -224,22 +224,9 @@ namespace SBTech.Orleans.Providers.Elastic
             stat.Add("DeploymentId", state.DeploymentId);
             stat.Add("HostName", state.HostName);
             stat.Add("UtcDateTime", DateTimeOffset.UtcNow.UtcDateTime);
-            stat.Add(counter.Name, counter.IsValueDelta ? counter.GetDeltaString() : counter.GetValueString());
+            stat.Add(counter.Name, counter.IsValueDelta ? float.Parse(counter.GetDeltaString()): float.Parse(counter.GetValueString()));
 
             return stat;
-
-            //return new StatsTableEntry
-            //{
-            //    Identity = state.Id,
-            //    DeploymentId = state.DeploymentId,                
-            //    Name = state.SiloName,
-            //    HostName = state.HostName,
-            //    Statistic = counter.Name,
-            //    IsDelta = counter.IsValueDelta,
-            //    StatValue = counter.IsValueDelta ? counter.GetDeltaString() : counter.GetValueString(),
-            //    Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture),
-            //    UtcDateTime = DateTimeOffset.UtcNow.UtcDateTime
-            //};
         }
     }
 }

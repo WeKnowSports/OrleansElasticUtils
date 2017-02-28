@@ -10,17 +10,6 @@ namespace SBTech.Orleans.ElasticUtils
 {
     public static class ProviderConfigurationExtensions
     {
-        //
-        // Summary:
-        //     Adds a storage provider of type Orleans.Storage.MemoryStorage
-        //
-        // Parameters:
-        //   config:
-        //     The cluster configuration object to add provider to.
-        //
-        //   providerName:
-        //     The provider name.
-        //
         public static void AddElasticSearchStatisticsProvider(this ClusterConfiguration config,
             string providerName, Uri ElasticHostAddress, string ElasticIndex= "orleans_statistics", string ElasticMetricType= "metric", string ElasticCounterType = "counter")
         {
