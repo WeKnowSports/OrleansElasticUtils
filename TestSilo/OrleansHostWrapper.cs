@@ -27,6 +27,7 @@ using System.Net;
 using Orleans.Runtime.Host;
 using System.Diagnostics;
 using Orleans.Runtime.Configuration;
+using SBTech.Orleans.ElasticUtils;
 using SBTech.Orleans.Providers.Elastic;
 
 namespace TestSilo
@@ -56,8 +57,9 @@ namespace TestSilo
                 siloHost.InitializeOrleansSilo();
 
 
-                siloHost.Config.AddMemoryStorageProvider();
-                siloHost.Config.Globals.RegisterStorageProvider<ElasticStatisticsProvider>("");
+                siloHost.Config.AddElasticSearchStatisticsProvider("ESSP",
+                    new Uri("http://smellycat01.devint.dev-r5ead.net:9200"));
+                
 
 
 

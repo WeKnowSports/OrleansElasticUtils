@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
@@ -11,27 +12,24 @@ using Nest;
 
 namespace SBTech.Orleans.Providers.Elastic
 {
-    class State
-    {
-        public string DeploymentId { get; set; } = "";
-        public bool IsSilo { get; set; } = true;
-        public string SiloName { get; set; } = "";
-        public string Id { get; set; } = "";
-        public string Address { get; set; } = "";
-        public string GatewayAddress { get; set; } = "";
-        public string HostName { get; set; } = "";
-        public string ElasticHostAddress { get; set; } = "http://localhost:9200";
-        public string ElasticIndex { get; set; } = "orleans_statistics";
-        public string ElasticMetricsType { get; set; } = "metrics";
-        public string ElasticStatsType { get; set; } = "stats";
-    }
-
     public class ElasticStatisticsProvider : IConfigurableSiloMetricsDataPublisher,
                                              IStatisticsPublisher,
                                              IProvider
     {
+        private string _elasticHostAddress;
+        private string _elasticIndex { get; set; } = "orleans_statistics";
+        private string _elasticMetricType { get; set; } = "metric";
+        private string _elasticCounterType { get; set; } = "counter";
+
+
+        private string ElasticHostAddress() => _elasticHostAddress;
+        private string ElasticIndex() => _elasticIndex + "-" + DateTime.UtcNow.ToString("yyyy-MM-dd-HH");
+        private string ElasticMetricType() => _elasticMetricType;
+        private string ElasticCounterType() => _elasticCounterType;
+
+
         // Example: 2010-09-02 09:50:43.341 GMT - Variant of UniversalSorta­bleDateTimePat­tern
-        const string DATE_TIME_FORMAT = "yyyy-MM-dd-" + "HH:mm:ss.fff 'GMT'";        
+        const string DATE_TIME_FORMAT = "yyyy-MM-dd-" + "HH:mm:ss.fff 'GMT'";
         int MAX_BULK_UPDATE_DOCS = 200;
         State _state = new State();
         Logger _logger;   
@@ -53,35 +51,69 @@ namespace SBTech.Orleans.Providers.Elastic
         {            
             Name = name;
             _state.Id = providerRuntime.SiloIdentity;
+            _state.ServiceId = providerRuntime.ServiceId;
             _logger = providerRuntime.GetLogger(typeof(ElasticStatisticsProvider).Name);
             
             if (config.Properties.ContainsKey("ElasticHostAddress"))
-                _state.ElasticHostAddress = config.Properties["ElasticHostAddress"];
+                _elasticHostAddress = config.Properties["ElasticHostAddress"];
 
             if (config.Properties.ContainsKey("ElasticIndex"))
-                _state.ElasticIndex = config.Properties["ElasticIndex"];
+                _elasticIndex = config.Properties["ElasticIndex"];
 
-            if (config.Properties.ContainsKey("ElasticMetricsType"))
-                _state.ElasticMetricsType = config.Properties["ElasticMetricsType"];
+            if (config.Properties.ContainsKey("ElasticMetricType"))
+                _elasticMetricType = config.Properties["ElasticMetricType"];
+            if (config.Properties.ContainsKey("ElasticCounterype"))
+                _elasticCounterType = config.Properties["ElasticCounterType"];
 
-            if (config.Properties.ContainsKey("ElasticStatsType"))
-                _state.ElasticStatsType = config.Properties["ElasticStatsType"];
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentNullException(nameof(name));
+            if (string.IsNullOrWhiteSpace(_elasticHostAddress))
+                throw new ArgumentNullException("ElasticHostAddress");
+            if (string.IsNullOrWhiteSpace(_elasticIndex))
+                throw new ArgumentNullException("ElasticIndex");
+            if (string.IsNullOrWhiteSpace(_elasticMetricType))
+                throw new ArgumentNullException("ElasticMetricType");
+            if (string.IsNullOrWhiteSpace(_elasticCounterType))
+                throw new ArgumentNullException("ElasticCounterType");
+
 
             return TaskDone.Done;
         }
 
-        /// <summary>
-        /// Initialization of configuration for Silo
-        /// </summary>        
+        public Task Init(string deploymentId, string storageConnectionString, SiloAddress siloAddress, string siloName, IPEndPoint gateway, string hostName)
+        {
+            _state.DeploymentId = deploymentId;
+            _state.SiloName = siloName;
+            _state.GatewayAddress = gateway.ToString();
+            _state.HostName = hostName;
+
+            return TaskDone.Done;
+        }
+
+
+        public Task Init(bool isSilo, string storageConnectionString, string deploymentId, string address,
+            string siloName, string hostName)
+        {
+            _state.DeploymentId = deploymentId;
+            _state.IsSilo = isSilo;
+            _state.SiloName = siloName;
+            _state.Address = address.ToString();
+            _state.HostName = hostName;
+
+            return TaskDone.Done;
+        }
+
+
         public void AddConfiguration(string deploymentId, bool isSilo, string siloName, SiloAddress address, IPEndPoint gateway, string hostName)
-        {            
+        {
             _state.DeploymentId = deploymentId;
             _state.IsSilo = isSilo;
             _state.SiloName = siloName;
             _state.Address = address.ToString();
             _state.GatewayAddress = gateway.ToString();
-            _state.HostName = hostName;            
+            _state.HostName = hostName;
         }
+
 
         /// <summary>
         /// Metrics for Silo
@@ -93,12 +125,11 @@ namespace SBTech.Orleans.Providers.Elastic
 
             try
             {
-                var esClient = CreateElasticClient(_state.ElasticHostAddress);
-
+                var esClient = CreateElasticClient(_elasticHostAddress);
+                
                 var siloMetrics = PopulateSiloMetricsEntry(metricsData, _state);
 
-                var response = await esClient.IndexAsync(siloMetrics, (ds) => ds.Index(_state.ElasticIndex)
-                                                                                .Type(_state.ElasticMetricsType));
+                var response = await esClient.IndexAsync(siloMetrics, (ds) => ds.Index(ElasticIndex()).Type(ElasticMetricType()));
 
                 if (!response.IsValid && _logger != null && _logger.IsVerbose)
                     _logger.Verbose(response.ServerError.Status, response.ServerError.Error);
@@ -122,7 +153,7 @@ namespace SBTech.Orleans.Providers.Elastic
 
             try
             {
-                var esClient = CreateElasticClient(_state.ElasticHostAddress);
+                var esClient = CreateElasticClient(_elasticHostAddress);
 
                 var counterBatches = statsCounters.Where(cs => cs.Storage == CounterStorage.LogAndTable)
                                                   .OrderBy(cs => cs.Name)
@@ -132,10 +163,9 @@ namespace SBTech.Orleans.Providers.Elastic
                 foreach (var batch in counterBatches)
                 {
                     var bulkDesc = new BulkDescriptor();
-                    bulkDesc.CreateMany(batch, (bulk, q) => bulk.Index(_state.ElasticIndex)
-                                                                .Type(_state.ElasticStatsType));
+                    var b = bulkDesc.IndexMany(batch, (bulk, q) => bulk.Index(ElasticIndex()).Type(ElasticCounterType()));
 
-                    var response = await esClient.BulkAsync(bulkDesc);
+                    var response = await esClient.BulkAsync(b);
 
                     if (response.Errors && _logger != null && _logger.IsVerbose)
                         _logger.Error(response.ServerError.Status, response.ServerError.Error);
@@ -150,9 +180,6 @@ namespace SBTech.Orleans.Providers.Elastic
             }
         }
 
-        public Task Init(string deploymentId, string storageConnectionString, SiloAddress siloAddress, string siloName, IPEndPoint gateway, string hostName) => TaskDone.Done;
-
-        public Task Init(bool isSilo, string storageConnectionString, string deploymentId, string address, string siloName, string hostName) => TaskDone.Done;
 
         static ElasticClient CreateElasticClient(string elasticHostAddress)
         {            
@@ -183,63 +210,36 @@ namespace SBTech.Orleans.Providers.Elastic
                 RequestQueueLength = metricsData.ReceiveQueueLength,
                 IsOverloaded = metricsData.IsOverloaded,
                 ClientCount = metricsData.ClientCount,
-                Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture)                
+                Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture)                ,
+                UtcDateTime = DateTimeOffset.UtcNow.UtcDateTime
             };
         }
 
-        static StatsTableEntry PopulateStatsTableEntry(ICounter counter, State state)
+        static dynamic PopulateStatsTableEntry(ICounter counter, State state)
         {
-            return new StatsTableEntry
-            {
-                Identity = state.Id,
-                DeploymentId = state.DeploymentId,                
-                Name = state.SiloName,
-                HostName = state.HostName,
-                Statistic = counter.Name,
-                IsDelta = counter.IsValueDelta,
-                StatValue = counter.IsValueDelta ? counter.GetDeltaString() : counter.GetValueString(),
-                Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture)
-            };
+            var stat = new ExpandoObject() as IDictionary<string, object>;
+            stat.Add("SiloId", state.Id);
+            stat.Add("SiloName", state.SiloName);
+
+            stat.Add("DeploymentId", state.DeploymentId);
+            stat.Add("HostName", state.HostName);
+            stat.Add("UtcDateTime", DateTimeOffset.UtcNow.UtcDateTime);
+            stat.Add(counter.Name, counter.IsValueDelta ? counter.GetDeltaString() : counter.GetValueString());
+
+            return stat;
+
+            //return new StatsTableEntry
+            //{
+            //    Identity = state.Id,
+            //    DeploymentId = state.DeploymentId,                
+            //    Name = state.SiloName,
+            //    HostName = state.HostName,
+            //    Statistic = counter.Name,
+            //    IsDelta = counter.IsValueDelta,
+            //    StatValue = counter.IsValueDelta ? counter.GetDeltaString() : counter.GetValueString(),
+            //    Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture),
+            //    UtcDateTime = DateTimeOffset.UtcNow.UtcDateTime
+            //};
         }
-    }
-
-    [Serializable]
-    internal class StatsTableEntry
-    {
-        public string Identity { get; set; }        
-        public string DeploymentId { get; set; }        
-        public string Name { get; set; }        
-        public string HostName { get; set; }
-        public string Statistic { get; set; }
-        public string StatValue { get; set; }
-        public bool IsDelta { get; set; }
-        public string Time { get; set; }
-        public override string ToString() => $"StatsTableEntry[ Identity={Identity} DeploymentId={DeploymentId} Name={Name} HostName={HostName} Statistic={Statistic} StatValue={StatValue} IsDelta={IsDelta} Time={Time} ]";
-    }
-
-    [Serializable]
-    internal class SiloMetricsEntry
-    {
-        public string SiloId { get; set; }
-        public string SiloName { get; set; }
-        public string DeploymentId { get; set; }
-        public string Address { get; set; }
-        public string HostName { get; set; }
-        public string GatewayAddress { get; set; }
-        public double CpuUsage { get; set; }
-        public long TotalPhysicalMemory { get; set; }
-        public long AvailablePhysicalMemory { get; set; }        
-        public long MemoryUsage { get; set; }
-        public int SendQueueLength { get; set; }
-        public int ReceiveQueueLength { get; set; }
-        public long SentMessages { get; set; }
-        public long ReceivedMessages { get; set; }
-        public int ActivationsCount { get; set; }
-        public int RecentlyUsedActivations { get; set; }
-        public int RequestQueueLength { get; set; }
-        public bool IsOverloaded { get; set; }
-        public long ClientCount { get; set; }
-        public string Time { get; set; }
-        public override string ToString() => $"SiloMetricsEntry[ SiloId={SiloId} DeploymentId={DeploymentId} Address={Address} HostName={HostName} GatewayAddress={GatewayAddress} CpuUsage={CpuUsage} TotalPhysicalMemory={TotalPhysicalMemory} AvailablePhysicalMemory={AvailablePhysicalMemory} MemoryUsage={MemoryUsage} SendQueueLength={SendQueueLength} ReceiveQueueLength={ReceiveQueueLength} SentMessages={SentMessages} ReceivedMessages={ReceivedMessages} ActivationsCount={ActivationsCount} RecentlyUsedActivations={RecentlyUsedActivations} RequestQueueLength={RequestQueueLength} IsOverloaded={IsOverloaded} ClientCount={ClientCount} Time={Time} ]";
     }
 }

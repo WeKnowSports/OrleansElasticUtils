@@ -16,6 +16,16 @@ namespace SBTech.Orleans.Providers.Elastic
                                              IStatisticsPublisher,
                                              IProvider
     {
+        private string _elasticHostAddress;
+        private string _elasticIndex { get; set; } = "orleans_statistics";
+        private string _elasticType { get; set; } = "metrics";
+
+
+        private string ElasticHostAddress() => _elasticHostAddress;
+        private string ElasticIndex() => _elasticIndex + "-" + DateTime.UtcNow.ToString("yyyy-MM-dd-HH");
+        private string ElasticType() => _elasticType;
+
+
         // Example: 2010-09-02 09:50:43.341 GMT - Variant of UniversalSorta­bleDateTimePat­tern
         const string DATE_TIME_FORMAT = "yyyy-MM-dd-" + "HH:mm:ss.fff 'GMT'";        
         int MAX_BULK_UPDATE_DOCS = 200;
@@ -36,25 +46,37 @@ namespace SBTech.Orleans.Providers.Elastic
         /// Initialization of ElasticStatisticsProvider
         /// </summary>        
         public Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
-        {            
+        {
             Name = name;
             _state.Id = providerRuntime.SiloIdentity;
             _logger = providerRuntime.GetLogger(typeof(ElasticStatisticsProvider).Name);
-            
+
             if (config.Properties.ContainsKey("ElasticHostAddress"))
-                _state.ElasticHostAddress = config.Properties["ElasticHostAddress"];
+                _elasticHostAddress = config.Properties["ElasticHostAddress"];
 
             if (config.Properties.ContainsKey("ElasticIndex"))
-                _state.ElasticIndex = config.Properties["ElasticIndex"];
+                _elasticIndex = config.Properties["ElasticIndex"];
 
-            if (config.Properties.ContainsKey("ElasticMetricsType"))
-                _state.ElasticMetricsType = config.Properties["ElasticMetricsType"];
+            if (config.Properties.ContainsKey("ElasticType"))
+                _elasticType = config.Properties["ElasticType"];
 
-            if (config.Properties.ContainsKey("ElasticStatsType"))
-                _state.ElasticStatsType = config.Properties["ElasticStatsType"];
+
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentNullException(nameof(name));
+            if (string.IsNullOrWhiteSpace(_elasticHostAddress))
+                throw new ArgumentNullException("ElasticHostAddress");
+            if (string.IsNullOrWhiteSpace(_elasticIndex))
+                throw new ArgumentNullException("ElasticIndex");
+            if (string.IsNullOrWhiteSpace(_elasticType))
+                throw new ArgumentNullException("ElasticType");
+
 
             return TaskDone.Done;
         }
+
+        //public Task Init(string deploymentId, string storageConnectionString, SiloAddress siloAddress, string siloName, IPEndPoint gateway, string hostName) => TaskDone.Done;
+
+        public Task Init(bool isSilo, string storageConnectionString, string deploymentId, string address, string siloName, string hostName) => TaskDone.Done;
 
         /// <summary>
         /// Initialization of configuration for Silo
@@ -79,12 +101,12 @@ namespace SBTech.Orleans.Providers.Elastic
 
             try
             {
-                var esClient = CreateElasticClient(_state.ElasticHostAddress);
+                var esClient = CreateElasticClient(ElasticHostAddress());
 
                 var siloMetrics = PopulateSiloMetricsEntry(metricsData, _state);
 
-                var response = await esClient.IndexAsync(siloMetrics, (ds) => ds.Index(_state.ElasticIndex)
-                                                                                .Type(_state.ElasticMetricsType));
+                var response = await esClient.IndexAsync(siloMetrics, (ds) => ds.Index(ElasticIndex())
+                                                                                .Type(ElasticType()));
 
                 if (!response.IsValid && _logger != null && _logger.IsVerbose)
                     _logger.Verbose(response.ServerError.Status, response.ServerError.Error);
@@ -108,7 +130,7 @@ namespace SBTech.Orleans.Providers.Elastic
 
             try
             {
-                var esClient = CreateElasticClient(_state.ElasticHostAddress);
+                var esClient = CreateElasticClient(ElasticHostAddress());
 
                 var counterBatches = statsCounters.Where(cs => cs.Storage == CounterStorage.LogAndTable)
                                                   .OrderBy(cs => cs.Name)
@@ -118,8 +140,8 @@ namespace SBTech.Orleans.Providers.Elastic
                 foreach (var batch in counterBatches)
                 {
                     var bulkDesc = new BulkDescriptor();
-                    bulkDesc.CreateMany(batch, (bulk, q) => bulk.Index(_state.ElasticIndex)
-                                                                .Type(_state.ElasticStatsType));
+                    bulkDesc.CreateMany(batch, (bulk, q) => bulk.Index(ElasticIndex())
+                                                                .Type(ElasticType()));
 
                     var response = await esClient.BulkAsync(bulkDesc);
 
@@ -136,9 +158,6 @@ namespace SBTech.Orleans.Providers.Elastic
             }
         }
 
-        public Task Init(string deploymentId, string storageConnectionString, SiloAddress siloAddress, string siloName, IPEndPoint gateway, string hostName) => TaskDone.Done;
-
-        public Task Init(bool isSilo, string storageConnectionString, string deploymentId, string address, string siloName, string hostName) => TaskDone.Done;
 
         static ElasticClient CreateElasticClient(string elasticHostAddress)
         {            
