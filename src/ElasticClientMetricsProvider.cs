@@ -9,11 +9,14 @@ using Orleans;
 using Orleans.Runtime;
 using Orleans.Providers;
 using Nest;
+using Orleans.Runtime.Configuration;
 
 namespace SBTech.Orleans.Providers.Elastic
 {
-    public class ElasticStatisticsProvider : IConfigurableSiloMetricsDataPublisher,
-                                             IStatisticsPublisher,
+    public class ElasticClientMetricsProvider :
+        IConfigurableClientMetricsDataPublisher,
+        IClientMetricsDataPublisher,
+        IStatisticsPublisher,
                                              IProvider
     {
         private string _elasticHostAddress;
@@ -29,7 +32,7 @@ namespace SBTech.Orleans.Providers.Elastic
 
 
         // Example: 2010-09-02 09:50:43.341 GMT - Variant of UniversalSorta­bleDateTimePat­tern
-        const string DATE_TIME_FORMAT = "yyyy-MM-dd-" + "HH:mm:ss.fff 'GMT'";
+        const string DATE_TIME_FORMAT = "yyyy-MM-dd-" + "HH:mm:ss.fff 'GMT'";        
         int MAX_BULK_UPDATE_DOCS = 200;
         State _state = new State();
         Logger _logger;   
@@ -48,12 +51,11 @@ namespace SBTech.Orleans.Providers.Elastic
         /// Initialization of ElasticStatisticsProvider
         /// </summary>        
         public Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
-        {            
+        {
             Name = name;
-            _state.Id = providerRuntime.SiloIdentity;
             _state.ServiceId = providerRuntime.ServiceId;
-            _logger = providerRuntime.GetLogger(typeof(ElasticStatisticsProvider).Name);
-            
+            _logger = providerRuntime.GetLogger(typeof(ElasticClientMetricsProvider).Name);
+
             if (config.Properties.ContainsKey("ElasticHostAddress"))
                 _elasticHostAddress = config.Properties["ElasticHostAddress"];
 
@@ -80,56 +82,44 @@ namespace SBTech.Orleans.Providers.Elastic
             return TaskDone.Done;
         }
 
-        public Task Init(string deploymentId, string storageConnectionString, SiloAddress siloAddress, string siloName, IPEndPoint gateway, string hostName)
+        public void AddConfiguration(string deploymentId, string hostName, string clientId, IPAddress address)
         {
             _state.DeploymentId = deploymentId;
-            _state.SiloName = siloName;
-            _state.GatewayAddress = gateway.ToString();
+            _state.Id = clientId;
+            _state.Address = address.ToString();
             _state.HostName = hostName;
+        }
+
+
+        public Task Init(ClientConfiguration config, IPAddress address, string clientId)
+        {
+            _state.Id = clientId;
+            _state.Address = address.ToString();
 
             return TaskDone.Done;
         }
-
 
         public Task Init(bool isSilo, string storageConnectionString, string deploymentId, string address,
-            string siloName, string hostName)
-        {
-            _state.DeploymentId = deploymentId;
-            _state.IsSilo = isSilo;
-            _state.SiloName = siloName;
-            _state.Address = address.ToString();
-            _state.HostName = hostName;
+            string siloName, string hostName) => TaskDone.Done;
 
-            return TaskDone.Done;
-        }
-
-
-        public void AddConfiguration(string deploymentId, bool isSilo, string siloName, SiloAddress address, IPEndPoint gateway, string hostName)
-        {
-            _state.DeploymentId = deploymentId;
-            _state.IsSilo = isSilo;
-            _state.SiloName = siloName;
-            _state.Address = address.ToString();
-            _state.GatewayAddress = gateway.ToString();
-            _state.HostName = hostName;
-        }
 
 
         /// <summary>
-        /// Metrics for Silo
+        /// Metrics for client
         /// </summary>        
-        public async Task ReportMetrics(ISiloPerformanceMetrics metricsData)
+        public async Task ReportMetrics(IClientPerformanceMetrics metricsData)
         {
             if (_logger != null && _logger.IsVerbose3)
-                _logger.Verbose3($"{ nameof(ElasticStatisticsProvider)}.ReportMetrics called with metrics: {0}, name: {1}, id: {2}.", metricsData, _state.SiloName, _state.Id);
+                _logger.Verbose3($"{nameof(ElasticClientMetricsProvider)}.ReportMetrics called with metrics: {0}, name: {1}, id: {2}.", metricsData, _state.SiloName, _state.Id);
 
             try
             {
-                var esClient = CreateElasticClient(_elasticHostAddress);
-                
-                var siloMetrics = PopulateSiloMetricsEntry(metricsData, _state);
+                var esClient = CreateElasticClient(ElasticHostAddress());
 
-                var response = await esClient.IndexAsync(siloMetrics, (ds) => ds.Index(ElasticIndex()).Type(ElasticMetricType()));
+                var clientMetrics = PopulateClientMetricsEntry(metricsData, _state);
+
+                var response = await esClient.IndexAsync(clientMetrics, (ds) => ds.Index(ElasticIndex())
+                                                                                .Type(ElasticMetricType()));
 
                 if (!response.IsValid && _logger != null && _logger.IsVerbose)
                     _logger.Verbose(response.ServerError.Status, response.ServerError.Error);
@@ -137,7 +127,7 @@ namespace SBTech.Orleans.Providers.Elastic
             catch (Exception ex)
             {
                 if (_logger != null && _logger.IsVerbose)
-                    _logger.Verbose($"{ nameof(ElasticStatisticsProvider)}.ReportMetrics failed: {0}", ex);
+                    _logger.Verbose($"{ nameof(ElasticClientMetricsProvider)}.ReportMetrics failed: {0}", ex);
 
                 throw;
             }
@@ -149,11 +139,11 @@ namespace SBTech.Orleans.Providers.Elastic
         public async Task ReportStats(List<ICounter> statsCounters)
         {
             if (_logger != null && _logger.IsVerbose3)
-                _logger.Verbose3($"{ nameof(ElasticStatisticsProvider)}.ReportStats called with {0} counters, name: {1}, id: {2}", statsCounters.Count, _state.SiloName, _state.Id);
+                _logger.Verbose3($"{ nameof(ElasticClientMetricsProvider)}.ReportStats called with {0} counters, name: {1}, id: {2}", statsCounters.Count, _state.SiloName, _state.Id);
 
             try
             {
-                var esClient = CreateElasticClient(_elasticHostAddress);
+                var esClient = CreateElasticClient(ElasticHostAddress());
 
                 var counterBatches = statsCounters.Where(cs => cs.Storage == CounterStorage.LogAndTable)
                                                   .OrderBy(cs => cs.Name)
@@ -163,9 +153,10 @@ namespace SBTech.Orleans.Providers.Elastic
                 foreach (var batch in counterBatches)
                 {
                     var bulkDesc = new BulkDescriptor();
-                    var b = bulkDesc.IndexMany(batch, (bulk, q) => bulk.Index(ElasticIndex()).Type(ElasticCounterType()));
+                    bulkDesc.IndexMany(batch, (bulk, q) => bulk.Index(ElasticIndex())
+                                                                .Type(ElasticCounterType()));
 
-                    var response = await esClient.BulkAsync(b);
+                    var response = await esClient.BulkAsync(bulkDesc);
 
                     if (response.Errors && _logger != null && _logger.IsVerbose)
                         _logger.Error(response.ServerError.Status, response.ServerError.Error);
@@ -174,7 +165,7 @@ namespace SBTech.Orleans.Providers.Elastic
             catch (Exception ex)
             {
                 if (_logger != null && _logger.IsVerbose)
-                    _logger.Verbose($"{ nameof(ElasticStatisticsProvider)}.ReportStats failed: {0}", ex);
+                    _logger.Verbose($"{ nameof(ElasticClientMetricsProvider)}.ReportStats failed: {0}", ex);
 
                 throw;
             }
@@ -187,16 +178,17 @@ namespace SBTech.Orleans.Providers.Elastic
             return new ElasticClient(new ConnectionSettings(node));
         }       
 
-        static SiloMetricsEntry PopulateSiloMetricsEntry(ISiloPerformanceMetrics metricsData, State state)
+        static ClientMetricsEntry PopulateClientMetricsEntry(IClientPerformanceMetrics metricsData, State state)
         {
-            return new SiloMetricsEntry
+            return new ClientMetricsEntry
             {
-                SiloId = state.Id,
-                SiloName = state.SiloName,
+                ConnectedGatewayCount = metricsData.ConnectedGatewayCount,
+
+                ClientId = state.Id,
                 DeploymentId = state.DeploymentId,
                 Address = state.Address,
                 HostName = state.HostName,
-                GatewayAddress = state.GatewayAddress,
+
                 CpuUsage = metricsData.CpuUsage,
                 TotalPhysicalMemory = metricsData.TotalPhysicalMemory,
                 AvailablePhysicalMemory = metricsData.AvailablePhysicalMemory,
@@ -205,28 +197,25 @@ namespace SBTech.Orleans.Providers.Elastic
                 ReceiveQueueLength = metricsData.ReceiveQueueLength,
                 SentMessages = metricsData.SentMessages,
                 ReceivedMessages = metricsData.ReceivedMessages,
-                ActivationsCount = metricsData.ActivationCount,
-                RecentlyUsedActivations = metricsData.RecentlyUsedActivationCount,
-                RequestQueueLength = metricsData.ReceiveQueueLength,
-                IsOverloaded = metricsData.IsOverloaded,
-                ClientCount = metricsData.ClientCount,
-                Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture)                ,
-                UtcDateTime = DateTimeOffset.UtcNow.UtcDateTime
+
+                Time = DateTime.UtcNow.ToString(DATE_TIME_FORMAT, CultureInfo.InvariantCulture)                
             };
         }
 
         static dynamic PopulateStatsTableEntry(ICounter counter, State state)
         {
             var stat = new ExpandoObject() as IDictionary<string, object>;
-            stat.Add("SiloId", state.Id);
-            stat.Add("SiloName", state.SiloName);
+            stat.Add("ClientId", state.Id);
 
             stat.Add("DeploymentId", state.DeploymentId);
             stat.Add("HostName", state.HostName);
             stat.Add("UtcDateTime", DateTimeOffset.UtcNow.UtcDateTime);
-            stat.Add(counter.Name, counter.IsValueDelta ? float.Parse(counter.GetDeltaString()): float.Parse(counter.GetValueString()));
+            stat.Add(counter.Name, counter.IsValueDelta ? float.Parse(counter.GetDeltaString()) : float.Parse(counter.GetValueString()));
 
             return stat;
         }
+
+
     }
+
 }

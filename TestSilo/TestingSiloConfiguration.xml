@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<OrleansConfiguration xmlns="urn:orleans">
+  <Globals>
+    <StreamProviders>
+      <Provider Type="Orleans.Providers.Streams.SimpleMessageStream.SimpleMessageStreamProvider"
+          Name="SMS"
+          FireAndForgetDelivery="false"/>
+    </StreamProviders>
+
+    <StorageProviders>
+      <Provider Type="Orleans.Storage.MemoryStorage" Name="PubSubStore" />
+    </StorageProviders>
+    <SeedNode Address="localhost" Port="11111" />
+  </Globals>
+  <Defaults>
+    <Networking Address="localhost" Port="11111" />
+    <ProxyingGateway Address="localhost" Port="30000" />
+    <Tracing
+      DefaultTraceLevel="Verbose"
+      TraceToConsole="true"
+      TraceToFile="{2}-{0}-{1}.log"
+      BulkMessageLimit="1000">
+      <!--<TraceLevelOverride LogPrefix="Application" TraceLevel="Info" />-->
+      <TraceLevelOverride LogPrefix="Runtime" TraceLevel="Info" />
+    </Tracing>
+  </Defaults>
+</OrleansConfiguration>
